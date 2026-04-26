@@ -11,6 +11,11 @@
 HalPowerManager powerManager;  // Singleton instance
 
 void HalPowerManager::begin() {
+#ifdef TARGET_M5PAPER
+  // M5Paper battery is read via ADC on GPIO35 (no I2C fuel gauge).
+  // ADC pin is configured inside BatteryMonitor; no extra pinMode needed here.
+  _batteryUseI2C = false;
+#else
   if (gpio.deviceIsX3()) {
     // X3 uses an I2C fuel gauge for battery monitoring.
     // I2C init must come AFTER gpio.begin() so early hardware detection/probes are finished.
@@ -20,6 +25,7 @@ void HalPowerManager::begin() {
   } else {
     pinMode(BAT_GPIO0, INPUT);
   }
+#endif
   normalFreq = getCpuFrequencyMhz();
   modeMutex = xSemaphoreCreateMutex();
   assert(modeMutex != nullptr);
@@ -66,6 +72,13 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
     delay(50);
     gpio.update();
   }
+
+#ifdef TARGET_M5PAPER
+  // M5Paper uses the standard ESP32 EXT0 wakeup on GPIO38 (Power button, RTC GPIO).
+  // esp_deep_sleep_enable_gpio_wakeup is only available on ESP32-C3/S3;
+  // standard ESP32 (Xtensa) uses esp_sleep_enable_ext0_wakeup instead.
+  esp_sleep_enable_ext0_wakeup(static_cast<gpio_num_t>(InputManager::POWER_BUTTON_PIN), 0 /* LOW */);
+#else
   // Pre-sleep routines from the original firmware
   // GPIO13 is connected to battery latch MOSFET, we need to make sure it's low during sleep
   // Note that this means the MCU will be completely powered off during sleep, including RTC
@@ -81,6 +94,8 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
   // power button is hard-wired to briefly provide power to the MCU, waking it up regardless of the wakeup source
   // configuration
   esp_deep_sleep_enable_gpio_wakeup(1ULL << InputManager::POWER_BUTTON_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
+#endif
+
   // Enter Deep Sleep
   esp_deep_sleep_start();
 }
@@ -112,7 +127,15 @@ uint16_t HalPowerManager::getBatteryPercentage() const {
     _batteryLastPollMs = now;
     return _batteryCachedPercent;
   }
+
+#ifdef TARGET_M5PAPER
+  // M5Paper battery voltage on GPIO35 through a 1:2 voltage divider.
+  // The BatteryMonitor multiplier of 2.0 doubles the ADC reading to get the
+  // actual battery voltage.
+  static const BatteryMonitor battery = BatteryMonitor(BAT_ADC_PIN, 2.0f);
+#else
   static const BatteryMonitor battery = BatteryMonitor(BAT_GPIO0);
+#endif
 
   // smooth the battery %.
   if (_batteryCachedPercent == 0) {

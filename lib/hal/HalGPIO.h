@@ -3,6 +3,29 @@
 #include <Arduino.h>
 #include <InputManager.h>
 
+#ifdef TARGET_M5PAPER
+// ---- M5Paper hardware (ESP32-D0WDQ6-V3) ----
+// IT8951 e-ink controller connected via shared SPI bus (GPIO12/13/14).
+#define EPD_SCLK 14   // SPI Clock
+#define EPD_MOSI 12   // SPI MOSI
+#define EPD_CS   15   // IT8951 Chip Select
+#define EPD_DC   -1   // Unused (IT8951 has no DC line)
+#define EPD_RST  -1   // Unused (IT8951 reset is handled by power circuit)
+#define EPD_BUSY 27   // HRDY – active HIGH when IT8951 is ready
+
+#define SPI_MISO 13   // SPI MISO, shared between IT8951 and SD card
+
+// SD card uses the same SPI bus as the IT8951, CS on GPIO4.
+#define SD_SPI_CS 4
+
+// M5Paper ADC pin for battery voltage (via resistor divider).
+#define BAT_ADC_PIN 35
+
+// GPIO3 (U0RXD) is pulled HIGH by the CP2104 when USB is connected.
+#define UART0_RXD 3
+
+#else
+// ---- Xteink X4 / X3 hardware (ESP32-C3) ----
 // Display SPI pins (custom pins for XteinkX4, not hardware SPI defaults)
 #define EPD_SCLK 8   // SPI Clock
 #define EPD_MOSI 10  // SPI MOSI (Master Out Slave In)
@@ -16,6 +39,7 @@
 #define BAT_GPIO0 0  // Battery voltage
 
 #define UART0_RXD 20  // Used for USB connection detection
+#endif  // TARGET_M5PAPER
 
 // Xteink X3 Hardware
 #define X3_I2C_SDA 20
@@ -47,17 +71,40 @@ class HalGPIO {
   bool usbStateChanged = false;
 
  public:
+#ifdef TARGET_M5PAPER
+  enum class DeviceType : uint8_t { M5Paper };
+#else
   enum class DeviceType : uint8_t { X4, X3 };
+#endif
 
  private:
+#ifdef TARGET_M5PAPER
+  DeviceType _deviceType = DeviceType::M5Paper;
+#else
   DeviceType _deviceType = DeviceType::X4;
+#endif
 
  public:
   HalGPIO() = default;
 
   // Inline device type helpers for cleaner downstream checks
-  inline bool deviceIsX3() const { return _deviceType == DeviceType::X3; }
-  inline bool deviceIsX4() const { return _deviceType == DeviceType::X4; }
+  inline bool deviceIsX3() const {
+#ifdef TARGET_M5PAPER
+    return false;
+#else
+    return _deviceType == DeviceType::X3;
+#endif
+  }
+  inline bool deviceIsX4() const {
+#ifdef TARGET_M5PAPER
+    return false;
+#else
+    return _deviceType == DeviceType::X4;
+#endif
+  }
+#ifdef TARGET_M5PAPER
+  inline bool deviceIsM5Paper() const { return true; }
+#endif
 
   // Start button GPIO and setup SPI for screen and SD card
   void begin();

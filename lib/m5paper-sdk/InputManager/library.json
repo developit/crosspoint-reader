@@ -1,0 +1,13 @@
+{
+  "name": "InputManager",
+  "version": "1.0.0",
+  "description": "GPIO button input manager for M5Paper (GPIO37/38/39).",
+  "authors": [
+    {
+      "name": "CrossPoint Reader contributors"
+    }
+  ],
+  "dependencies": {},
+  "platforms": "espressif32",
+  "frameworks": ["arduino"]
+}
