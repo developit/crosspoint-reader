@@ -1,0 +1,13 @@
+{
+  "name": "EInkDisplay",
+  "version": "1.0.0",
+  "description": "IT8951-based E-Ink display driver for M5Paper (540x960, 16-level grayscale).",
+  "authors": [
+    {
+      "name": "CrossPoint Reader contributors"
+    }
+  ],
+  "dependencies": {},
+  "platforms": "espressif32",
+  "frameworks": ["arduino"]
+}

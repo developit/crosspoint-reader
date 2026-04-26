@@ -27,7 +27,11 @@ won't trigger deprecation warnings.
 #define LOG_LEVEL 0
 #endif
 
+#if defined(ARDUINO_USB_CDC_ON_BOOT) && ARDUINO_USB_CDC_ON_BOOT
 static HWCDC& logSerial = Serial;
+#else
+static HardwareSerial& logSerial = Serial;
+#endif
 
 void logPrintf(const char* level, const char* origin, const char* format, ...);
 

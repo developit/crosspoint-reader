@@ -242,7 +242,11 @@ void setup() {
   }
 #endif
 
+#ifdef TARGET_M5PAPER
+  LOG_INF("MAIN", "Hardware detect: M5Paper");
+#else
   LOG_INF("MAIN", "Hardware detect: %s", gpio.deviceIsX3() ? "X3" : "X4");
+#endif
 
   // SD Card Initialization
   // We need 6 open files concurrently when parsing a new chapter

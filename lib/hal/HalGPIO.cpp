@@ -8,7 +8,111 @@
 // Global HalGPIO instance
 HalGPIO gpio;
 
-namespace X3GPIO {
+#ifdef TARGET_M5PAPER
+// ============================================================
+// M5Paper implementation
+// ============================================================
+
+void HalGPIO::begin() {
+  inputMgr.begin();
+
+  // Initialise the shared SPI bus for IT8951 and SD card.
+  // SPI.begin(sclk, miso, mosi, ss) – we pass CS as -1 here and manage
+  // each device's CS pin manually in the respective drivers.
+  SPI.begin(EPD_SCLK, SPI_MISO, EPD_MOSI, -1);
+
+  // GPIO3 (U0RXD / CP2104 TXD) – weak pull-down so we can detect USB.
+  pinMode(UART0_RXD, INPUT_PULLDOWN);
+}
+
+void HalGPIO::update() {
+  inputMgr.update();
+  const bool connected = isUsbConnected();
+  usbStateChanged = (connected != lastUsbConnected);
+  lastUsbConnected = connected;
+}
+
+bool HalGPIO::wasUsbStateChanged() const { return usbStateChanged; }
+
+bool HalGPIO::isPressed(uint8_t buttonIndex) const { return inputMgr.isPressed(buttonIndex); }
+bool HalGPIO::wasPressed(uint8_t buttonIndex) const { return inputMgr.wasPressed(buttonIndex); }
+bool HalGPIO::wasAnyPressed() const { return inputMgr.wasAnyPressed(); }
+bool HalGPIO::wasReleased(uint8_t buttonIndex) const { return inputMgr.wasReleased(buttonIndex); }
+bool HalGPIO::wasAnyReleased() const { return inputMgr.wasAnyReleased(); }
+unsigned long HalGPIO::getHeldTime() const { return inputMgr.getHeldTime(); }
+
+void HalGPIO::startDeepSleep() {
+  // Wait for the power button to be released.
+  while (inputMgr.isPressed(BTN_POWER)) {
+    delay(50);
+    inputMgr.update();
+  }
+
+  // Configure GPIO38 (Power button, active LOW, RTC-capable) as wake source.
+  // esp_sleep_enable_ext0_wakeup is available on standard ESP32 (Xtensa).
+  esp_sleep_enable_ext0_wakeup(static_cast<gpio_num_t>(InputManager::POWER_BUTTON_PIN), 0 /* LOW */);
+
+  esp_deep_sleep_start();
+}
+
+void HalGPIO::verifyPowerButtonWakeup(uint16_t requiredDurationMs, bool shortPressAllowed) {
+  if (shortPressAllowed) {
+    return;
+  }
+  const uint16_t calibration = static_cast<uint16_t>(millis());
+  const uint16_t calibratedDuration =
+      (calibration < requiredDurationMs) ? (requiredDurationMs - calibration) : 1;
+
+  const auto start = millis();
+  inputMgr.update();
+  while (!inputMgr.isPressed(BTN_POWER) && millis() - start < 1000) {
+    delay(10);
+    inputMgr.update();
+  }
+  if (inputMgr.isPressed(BTN_POWER)) {
+    do {
+      delay(10);
+      inputMgr.update();
+    } while (inputMgr.isPressed(BTN_POWER) && inputMgr.getHeldTime() < calibratedDuration);
+    if (inputMgr.getHeldTime() < calibratedDuration) {
+      startDeepSleep();
+    }
+  } else {
+    startDeepSleep();
+  }
+}
+
+bool HalGPIO::isUsbConnected() const {
+  // GPIO3 (U0RXD) is held HIGH by the CP2104 USB-serial chip when USB is
+  // connected.  We use INPUT_PULLDOWN so the pin floats low when disconnected.
+  return digitalRead(UART0_RXD) == HIGH;
+}
+
+HalGPIO::WakeupReason HalGPIO::getWakeupReason() const {
+  const auto wakeupCause = esp_sleep_get_wakeup_cause();
+  const auto resetReason = esp_reset_reason();
+  const bool usbConnected = isUsbConnected();
+
+  // Woke from deep sleep via EXT0 (power button pressed).
+  if (wakeupCause == ESP_SLEEP_WAKEUP_EXT0 && resetReason == ESP_RST_DEEPSLEEP) {
+    return WakeupReason::PowerButton;
+  }
+  if (wakeupCause == ESP_SLEEP_WAKEUP_UNDEFINED && resetReason == ESP_RST_UNKNOWN && usbConnected) {
+    return WakeupReason::AfterFlash;
+  }
+  if (wakeupCause == ESP_SLEEP_WAKEUP_UNDEFINED && resetReason == ESP_RST_POWERON && !usbConnected) {
+    return WakeupReason::PowerButton;
+  }
+  if (wakeupCause == ESP_SLEEP_WAKEUP_UNDEFINED && resetReason == ESP_RST_POWERON && usbConnected) {
+    return WakeupReason::AfterUSBPower;
+  }
+  return WakeupReason::Other;
+}
+
+#else
+// ============================================================
+// Xteink X3 / X4 implementation (original)
+// ============================================================
 
 struct X3ProbeResult {
   bool bq27220 = false;
@@ -302,3 +406,5 @@ HalGPIO::WakeupReason HalGPIO::getWakeupReason() const {
   }
   return WakeupReason::Other;
 }
+
+#endif  // !TARGET_M5PAPER
